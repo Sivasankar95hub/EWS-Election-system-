@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { initializeFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBjFtAKdoF4yiLp30fagn8feukiXKCvPJA",
@@ -14,9 +14,12 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore with the custom databaseId
-export const db = getFirestore(
+// Initialize Firestore with the custom databaseId and experimental long-polling
+export const db = initializeFirestore(
   app,
+  {
+    experimentalForceLongPolling: true,
+  },
   "ai-studio-studentelectionm-aab9f142-68d1-46b3-b3cd-97ee4f3b44f1"
 );
 

@@ -25,7 +25,9 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   RefreshCw,
-  Info
+  Info,
+  Sun,
+  Moon
 } from "lucide-react";
 import { auth } from "../firebase";
 import { signOut } from "firebase/auth";
@@ -42,6 +44,7 @@ import {
   resetElection 
 } from "../firebaseHelpers";
 import { PREDEFINED_SYMBOLS, getSymbolIcon, getSymbolColor } from "./Symbols";
+import { CandidatePhoto, PLACEHOLDER_AVATARS } from "./CandidatePhoto";
 import { fileToBase64, resizeImage, formatTimestamp } from "../utils";
 
 interface AdminDashboardProps {
@@ -61,6 +64,38 @@ export default function AdminDashboard({
   isBypassActive = false,
   onLogout
 }: AdminDashboardProps) {
+  // Dark mode state with default checks
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem("adminTheme") === "dark";
+  });
+
+  useEffect(() => {
+    if (darkMode) {
+      localStorage.setItem("adminTheme", "dark");
+      document.documentElement.classList.add("dark");
+    } else {
+      localStorage.setItem("adminTheme", "light");
+      document.documentElement.classList.remove("dark");
+    }
+  }, [darkMode]);
+
+  // Dynamic theme selectors for components
+  const theme = {
+    bgPage: darkMode ? "bg-[#0b1329] text-slate-100" : "bg-slate-100 text-slate-800",
+    bgCard: darkMode ? "bg-slate-900/90 border-slate-800/80 shadow-lg text-slate-100" : "bg-white border-slate-200/80 shadow-sm text-slate-800",
+    bgCardHeader: darkMode ? "border-slate-800/80 bg-slate-900/60" : "border-slate-100 bg-slate-50/50",
+    bgInput: darkMode ? "bg-slate-800 border-slate-700/80 text-white placeholder-slate-500 focus:border-indigo-500" : "bg-white border-slate-200 focus:border-indigo-500 text-slate-800 placeholder-slate-400",
+    bgSec: darkMode ? "bg-slate-800/40 border-slate-700/40" : "bg-slate-50 border-slate-150",
+    textMain: darkMode ? "text-slate-100" : "text-slate-800",
+    textSec: darkMode ? "text-slate-400" : "text-slate-500",
+    textMuted: darkMode ? "text-slate-500" : "text-slate-400",
+    border: darkMode ? "border-slate-800" : "border-slate-200",
+    navbar: darkMode ? "bg-slate-900/95 border-slate-800/85" : "bg-white border-b border-slate-200",
+    btnSecondary: darkMode ? "bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700/80" : "bg-slate-100 hover:bg-slate-200 text-slate-700 border-transparent",
+    modal: darkMode ? "bg-slate-950 border border-slate-800 text-slate-100" : "bg-white text-slate-900",
+    modalHeader: darkMode ? "border-slate-800 bg-slate-900/50" : "border-slate-100 bg-slate-50/50",
+  };
+
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<"monitor" | "voters" | "candidates" | "settings">("monitor");
 
@@ -93,6 +128,7 @@ export default function AdminDashboard({
   const [candidateForm, setCandidateForm] = useState({
     name: "",
     positionId: "",
+    newPositionName: "",
     symbolName: "star",
     symbolUrl: "",
     photoUrl: "",
@@ -103,6 +139,12 @@ export default function AdminDashboard({
   const [newGradeInput, setNewGradeInput] = useState("");
   const [newSectionInput, setNewSectionInput] = useState("");
   const [newPositionInput, setNewPositionInput] = useState("");
+
+  // Inline edit states for Grades & Sections
+  const [editingGrade, setEditingGrade] = useState<string | null>(null);
+  const [editGradeVal, setEditGradeVal] = useState("");
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editSectionVal, setEditSectionVal] = useState("");
 
   // Reset Election Guard state
   const [showResetConfirm, setShowResetConfirm] = useState(false);
@@ -288,6 +330,7 @@ export default function AdminDashboard({
     setCandidateForm({
       name: "",
       positionId: settings.positions[0]?.id || "",
+      newPositionName: "",
       symbolName: "star",
       symbolUrl: "",
       photoUrl: "",
@@ -301,6 +344,7 @@ export default function AdminDashboard({
     setCandidateForm({
       name: cand.name,
       positionId: cand.positionId,
+      newPositionName: "",
       symbolName: cand.symbolName,
       symbolUrl: cand.symbolUrl,
       photoUrl: cand.photoUrl,
@@ -344,11 +388,27 @@ export default function AdminDashboard({
       return;
     }
 
+    let finalPositionId = candidateForm.positionId;
+
+    if (candidateForm.positionId === "CREATE_NEW") {
+      const pName = candidateForm.newPositionName.trim();
+      if (!pName) {
+        triggerNotification("error", "Please provide a name for the new position / participation type.");
+        return;
+      }
+      const newId = pName.toLowerCase().replace(/\s+/g, "_");
+      if (!settings.positions.some((p) => p.id === newId)) {
+        const updatedPositions = [...settings.positions, { id: newId, name: pName }];
+        await updateSettings({ positions: updatedPositions });
+      }
+      finalPositionId = newId;
+    }
+
     try {
       if (editingCandidate) {
         await updateCandidate(editingCandidate.id, {
           name: candidateForm.name,
-          positionId: candidateForm.positionId,
+          positionId: finalPositionId,
           symbolName: candidateForm.symbolName,
           symbolUrl: candidateForm.symbolUrl,
           photoUrl: candidateForm.photoUrl,
@@ -358,7 +418,7 @@ export default function AdminDashboard({
       } else {
         await addCandidate({
           name: candidateForm.name,
-          positionId: candidateForm.positionId,
+          positionId: finalPositionId,
           symbolName: candidateForm.symbolName,
           symbolUrl: candidateForm.symbolUrl,
           photoUrl: candidateForm.photoUrl,
@@ -418,6 +478,26 @@ export default function AdminDashboard({
     triggerNotification("success", `Removed ${grade}`);
   };
 
+  const handleEditGrade = async (oldGrade: string, newGrade: string) => {
+    const trimmedNew = newGrade.trim();
+    if (!trimmedNew || trimmedNew === oldGrade) return;
+    if (settings.grades.includes(trimmedNew)) {
+      triggerNotification("error", "Grade name already exists.");
+      return;
+    }
+    const updatedGrades = settings.grades.map((g) => g === oldGrade ? trimmedNew : g);
+    await updateSettings({ grades: updatedGrades });
+
+    let movedCount = 0;
+    const votersToUpdate = voters.filter(v => v.grade === oldGrade);
+    for (const v of votersToUpdate) {
+      await updateVoter(v.id, { grade: trimmedNew });
+      movedCount++;
+    }
+
+    triggerNotification("success", `Updated grade from "${oldGrade}" to "${trimmedNew}" (${movedCount} voters updated)`);
+  };
+
   const handleAddSection = async () => {
     const val = newSectionInput.trim();
     if (!val) return;
@@ -435,6 +515,26 @@ export default function AdminDashboard({
     const updatedSections = settings.sections.filter((s) => s !== section);
     await updateSettings({ sections: updatedSections });
     triggerNotification("success", `Removed ${section}`);
+  };
+
+  const handleEditSection = async (oldSection: string, newSection: string) => {
+    const trimmedNew = newSection.trim();
+    if (!trimmedNew || trimmedNew === oldSection) return;
+    if (settings.sections.includes(trimmedNew)) {
+      triggerNotification("error", "Section name already exists.");
+      return;
+    }
+    const updatedSections = settings.sections.map((s) => s === oldSection ? trimmedNew : s);
+    await updateSettings({ sections: updatedSections });
+
+    let movedCount = 0;
+    const votersToUpdate = voters.filter(v => v.section === oldSection);
+    for (const v of votersToUpdate) {
+      await updateVoter(v.id, { section: trimmedNew });
+      movedCount++;
+    }
+
+    triggerNotification("success", `Updated section from "${oldSection}" to "${trimmedNew}" (${movedCount} voters updated)`);
   };
 
   const handleAddPosition = async () => {
@@ -528,7 +628,7 @@ export default function AdminDashboard({
   });
 
   return (
-    <div id="admin_dashboard_container" className="min-h-screen bg-slate-100 flex flex-col font-sans print:bg-white select-none">
+    <div id="admin_dashboard_container" className={`min-h-screen flex flex-col font-sans print:bg-white select-none transition-colors duration-300 ${theme.bgPage} ${darkMode ? "dark" : ""}`}>
       
       {isBypassActive && (
         <div className="bg-amber-600 border-b border-amber-700 px-6 py-3 flex items-center justify-between text-xs font-semibold text-white">
@@ -599,6 +699,26 @@ export default function AdminDashboard({
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Global Theme Toggle Button */}
+          <button
+            onClick={() => setDarkMode(!darkMode)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-300 font-bold text-xs rounded-lg border border-slate-700/60 transition-all cursor-pointer shadow-sm"
+            title={darkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            id="admin_theme_toggle_btn"
+          >
+            {darkMode ? (
+              <>
+                <Sun className="h-3.5 w-3.5 text-amber-400" />
+                <span className="hidden md:inline">Light Mode</span>
+              </>
+            ) : (
+              <>
+                <Moon className="h-3.5 w-3.5 text-indigo-400" />
+                <span className="hidden md:inline">Dark Mode</span>
+              </>
+            )}
+          </button>
+
           <div className="hidden sm:block text-right">
             <p className="text-xs text-slate-400 font-medium">Logged in as</p>
             <p className="text-sm font-bold text-slate-200">Shiva AI Facilitator</p>
@@ -615,7 +735,7 @@ export default function AdminDashboard({
       </header>
 
       {/* DASHBOARD NAVIGATION */}
-      <nav className="bg-white border-b border-slate-200 px-6 py-1 flex items-center justify-between print:hidden">
+      <nav className={`px-6 py-1 flex items-center justify-between print:hidden transition-colors duration-300 ${theme.navbar}`}>
         <div className="flex gap-1 overflow-x-auto scrollbar-none py-1">
           {[
             { id: "monitor", label: "Live Monitor", icon: TrendingUp },
@@ -631,8 +751,8 @@ export default function AdminDashboard({
                 onClick={() => setActiveTab(tab.id as any)}
                 className={`flex items-center gap-2 px-4 py-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                   isActive 
-                    ? "bg-slate-100 text-slate-800 border-b-2 border-indigo-600" 
-                    : "text-slate-500 hover:text-slate-800 hover:bg-slate-50"
+                    ? (darkMode ? "bg-slate-800 text-white border-b-2 border-indigo-400" : "bg-slate-100 text-slate-800 border-b-2 border-indigo-600") 
+                    : (darkMode ? "text-slate-400 hover:text-white hover:bg-slate-800/60" : "text-slate-500 hover:text-slate-800 hover:bg-slate-50")
                 }`}
                 id={`tab_nav_${tab.id}`}
               >
@@ -673,19 +793,19 @@ export default function AdminDashboard({
               {/* TOP KPIS GRID */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="monitor_kpi_deck">
                 {[
-                  { label: "Total Registered", value: totalRegistered, icon: Users, color: "text-indigo-600 bg-indigo-50 border-indigo-100" },
-                  { label: "Total Votes Cast", value: totalVotesCast, icon: Vote, color: "text-emerald-600 bg-emerald-50 border-emerald-100" },
-                  { label: "Pending Voters", value: pendingVoters, icon: UserX, color: "text-amber-600 bg-amber-50 border-amber-100" },
-                  { label: "Voting Percentage", value: `${votingPercentage}%`, icon: Percent, color: "text-purple-600 bg-purple-50 border-purple-100" }
+                  { label: "Total Registered", value: totalRegistered, icon: Users, color: "text-indigo-600 bg-indigo-50 border-indigo-100 dark:text-indigo-400 dark:bg-indigo-950/30 dark:border-indigo-900/40" },
+                  { label: "Total Votes Cast", value: totalVotesCast, icon: Vote, color: "text-emerald-600 bg-emerald-50 border-emerald-100 dark:text-emerald-400 dark:bg-emerald-950/30 dark:border-emerald-900/40" },
+                  { label: "Pending Voters", value: pendingVoters, icon: UserX, color: "text-amber-600 bg-amber-50 border-amber-100 dark:text-amber-400 dark:bg-amber-950/30 dark:border-amber-900/40" },
+                  { label: "Voting Percentage", value: `${votingPercentage}%`, icon: Percent, color: "text-purple-600 bg-purple-50 border-purple-100 dark:text-purple-400 dark:bg-purple-950/30 dark:border-purple-900/40" }
                 ].map((kpi, i) => {
                   const Icon = kpi.icon;
                   return (
-                    <div key={i} className={`bg-white border rounded-2xl p-5 flex items-center justify-between shadow-sm ${kpi.color}`}>
+                    <div key={i} className={`border rounded-2xl p-5 flex items-center justify-between transition-all duration-300 ${darkMode ? "bg-slate-900/90 border-slate-800/80 text-slate-100 shadow-lg" : "bg-white border-slate-200/80 shadow-sm"}`}>
                       <div>
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{kpi.label}</span>
-                        <span className="text-2xl md:text-3xl font-black text-slate-800">{kpi.value}</span>
+                        <span className={`text-2xl md:text-3xl font-black ${darkMode ? "text-white" : "text-slate-800"}`}>{kpi.value}</span>
                       </div>
-                      <div className="p-3 bg-white rounded-xl shadow-sm">
+                      <div className={`p-3 rounded-xl border transition-all ${kpi.color}`}>
                         <Icon className="h-6 w-6" />
                       </div>
                     </div>
@@ -697,13 +817,17 @@ export default function AdminDashboard({
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 
                 {/* Live Candidate Standings leaderboard */}
-                <div className="lg:col-span-8 bg-white border border-slate-200/80 rounded-2xl shadow-sm p-6">
-                  <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                <div className={`lg:col-span-8 rounded-2xl shadow-sm p-6 transition-all duration-300 ${theme.bgCard}`}>
+                  <div className={`flex items-center justify-between pb-4 border-b mb-6 ${theme.bgCardHeader}`}>
                     <div>
-                      <h3 className="text-lg font-bold text-slate-800">Live Election Standings</h3>
+                      <h3 className={`text-lg font-bold ${theme.textMain}`}>Live Election Standings</h3>
                       <p className="text-xs text-slate-400">Aggregated real-time votes counts (ballot secrecy preserved)</p>
                     </div>
-                    <span className="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-lg border border-indigo-100 uppercase tracking-widest flex items-center gap-1">
+                    <span className={`text-xs font-bold px-3 py-1.5 rounded-lg border uppercase tracking-widest flex items-center gap-1 ${
+                      darkMode 
+                        ? "bg-indigo-950/40 text-indigo-400 border-indigo-900/50" 
+                        : "bg-indigo-50 text-indigo-700 border-indigo-100"
+                    }`}>
                       <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                       <span>Live Updating</span>
                     </span>
@@ -719,10 +843,10 @@ export default function AdminDashboard({
                       const maxVotes = posCandidates[0]?.votesCount || 0;
 
                       return (
-                        <div key={pos.id} className="border-b border-slate-100 last:border-0 pb-6 last:pb-0">
+                        <div key={pos.id} className={`border-b last:border-0 pb-6 last:pb-0 ${theme.bgCardHeader}`}>
                           <h4 className="text-sm font-extrabold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full bg-indigo-600 inline-block"></span>
-                            <span>{pos.name}</span>
+                            <span className={theme.textMain}>{pos.name}</span>
                           </h4>
 
                           {posCandidates.length === 0 ? (
@@ -739,22 +863,20 @@ export default function AdminDashboard({
                                     <div className="flex items-center justify-between text-sm">
                                       <div className="flex items-center gap-2.5">
                                         <div className="text-xs font-bold text-slate-400 w-5">#{idx + 1}</div>
-                                        {cand.photoUrl ? (
-                                          <img 
-                                            src={cand.photoUrl} 
-                                            alt={cand.name} 
-                                            className="w-7 h-7 rounded-full object-cover border border-slate-200"
-                                            referrerPolicy="no-referrer"
-                                          />
-                                        ) : (
-                                          <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center">
-                                            <Users className="h-3.5 w-3.5 text-slate-400" />
-                                          </div>
-                                        )}
+                                        <CandidatePhoto 
+                                          photoUrl={cand.photoUrl} 
+                                          name={cand.name} 
+                                          className="w-7 h-7 rounded-full text-[8px]" 
+                                          iconClassName="h-3.5 w-3.5"
+                                        />
                                         <div>
-                                          <span className="font-bold text-slate-700">{cand.name}</span>
+                                          <span className={`font-bold ${theme.textMain}`}>{cand.name}</span>
                                           {isLeader && (
-                                            <span className="ml-2 bg-emerald-50 border border-emerald-100 text-emerald-700 text-[10px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                                            <span className={`ml-2 border text-[10px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider ${
+                                              darkMode 
+                                                ? "bg-emerald-950/40 border-emerald-900/50 text-emerald-400" 
+                                                : "bg-emerald-50 border border-emerald-100 text-emerald-700"
+                                            }`}>
                                               Leader
                                             </span>
                                           )}
@@ -763,12 +885,12 @@ export default function AdminDashboard({
 
                                       <div className="flex items-center gap-3 font-mono">
                                         <div className="text-xs text-slate-400">Symbol: {cand.symbolName}</div>
-                                        <div className="font-extrabold text-slate-800">{cand.votesCount} votes</div>
+                                        <div className={`font-extrabold ${theme.textMain}`}>{cand.votesCount} votes</div>
                                       </div>
                                     </div>
 
                                     {/* Standings bar */}
-                                    <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden flex">
+                                    <div className={`w-full h-2.5 rounded-full overflow-hidden flex transition-all ${darkMode ? "bg-slate-800" : "bg-slate-100"}`}>
                                       <div 
                                         className={`h-full transition-all duration-500 ${isLeader ? 'bg-indigo-600' : 'bg-slate-400'}`}
                                         style={{ width: `${totalVotesCast > 0 ? (cand.votesCount / totalVotesCast) * 100 : 0}%` }}
@@ -786,37 +908,41 @@ export default function AdminDashboard({
                 </div>
 
                 {/* Live public activity feed logs */}
-                <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl shadow-sm p-6 flex flex-col justify-between h-[600px]">
+                <div className={`lg:col-span-4 rounded-2xl shadow-sm p-6 flex flex-col justify-between h-[600px] transition-all duration-300 ${theme.bgCard}`}>
                   <div>
-                    <h3 className="text-md font-extrabold text-slate-800 mb-1 flex items-center gap-2">
+                    <h3 className={`text-md font-extrabold mb-1 flex items-center gap-2 ${theme.textMain}`}>
                       <span>Live Ballot Casts</span>
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                       </span>
                     </h3>
-                    <p className="text-xs text-slate-400 border-b border-slate-100 pb-3 mb-4">
+                    <p className={`text-xs text-slate-400 border-b pb-3 mb-4 ${theme.bgCardHeader}`}>
                       Secrecy enforced: Individual vote choices are omitted.
                     </p>
 
                     <div className="overflow-y-auto max-h-[440px] space-y-4 pr-1 scrollbar-thin">
                       {activityLogs.length === 0 ? (
                         <div className="text-center py-12 text-slate-400">
-                          <Vote className="h-10 w-10 text-slate-200 mx-auto mb-3" />
+                          <Vote className="h-10 w-10 text-slate-200 dark:text-slate-700 mx-auto mb-3" />
                           <p className="text-xs font-semibold">Waiting for student check-ins...</p>
                         </div>
                       ) : (
                         activityLogs.map((log) => (
-                          <div key={log.id} className="flex gap-3 items-start border-l-2 border-indigo-100 pl-3.5 py-0.5">
+                          <div key={log.id} className={`flex gap-3 items-start border-l-2 pl-3.5 py-0.5 ${darkMode ? "border-indigo-900/60" : "border-indigo-100"}`}>
                             <div className="flex-1">
-                              <p className="text-xs font-extrabold text-slate-700">
+                              <p className={`text-xs font-extrabold ${theme.textMain}`}>
                                 {log.voterName}
                               </p>
                               <p className="text-[10px] text-slate-400">
                                 {log.admissionNo} • {log.grade} • Sec {log.section}
                               </p>
                             </div>
-                            <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                            <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                              darkMode 
+                                ? "text-indigo-400 bg-indigo-950/40" 
+                                : "text-indigo-600 bg-indigo-50"
+                            }`}>
                               {formatTimestamp(log.timestamp)}
                             </span>
                           </div>
@@ -1145,20 +1271,12 @@ export default function AdminDashboard({
                         <div className="p-5">
                           <div className="flex gap-4 items-start">
                             {/* Candidate image representation */}
-                            <div className="w-16 h-16 rounded-xl bg-slate-50 overflow-hidden shrink-0 border border-slate-200/60 relative">
-                              {cand.photoUrl ? (
-                                <img 
-                                  src={cand.photoUrl} 
-                                  alt={cand.name} 
-                                  className="w-full h-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-300 bg-slate-100">
-                                  <Users className="h-7 w-7" />
-                                </div>
-                              )}
-                            </div>
+                            <CandidatePhoto 
+                              photoUrl={cand.photoUrl} 
+                              name={cand.name} 
+                              className="w-16 h-16 rounded-xl shrink-0"
+                              iconClassName="h-7 w-7"
+                            />
 
                             {/* Candidate info */}
                             <div className="flex-1 space-y-1">
@@ -1438,19 +1556,65 @@ export default function AdminDashboard({
                   {/* Grades setup */}
                   <div className="border-t border-slate-100 pt-5">
                     <h3 className="text-md font-bold text-slate-800 mb-1">Managed School Grades</h3>
-                    <p className="text-xs text-slate-400 mb-3">Create list of eligible voter classes</p>
+                    <p className="text-xs text-slate-400 mb-3">Create list of eligible voter classes (Click pencil to edit inline)</p>
                     
-                    <div className="flex flex-wrap gap-1.5 max-h-[130px] overflow-y-auto pr-1">
+                    <div className="flex flex-wrap gap-2 max-h-[130px] overflow-y-auto pr-1">
                       {settings.grades.map((g) => (
-                        <span key={g} className="inline-flex items-center gap-1 text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
-                          <span>{g}</span>
-                          <button 
-                            onClick={() => handleRemoveGrade(g)}
-                            className="text-slate-400 hover:text-rose-600"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
+                        <div key={g} className="inline-flex">
+                          {editingGrade === g ? (
+                            <div className="flex items-center gap-1 bg-white border border-indigo-300 p-1 rounded-lg shadow-sm">
+                              <input
+                                type="text"
+                                value={editGradeVal}
+                                onChange={(e) => setEditGradeVal(e.target.value)}
+                                className="px-1.5 py-0.5 text-[11px] font-bold text-slate-700 outline-none w-20 bg-slate-50 border border-slate-200 rounded"
+                                autoFocus
+                                id={`edit_grade_input_${g.replace(/\s+/g, '_')}`}
+                              />
+                              <button
+                                onClick={async () => {
+                                  await handleEditGrade(g, editGradeVal);
+                                  setEditingGrade(null);
+                                }}
+                                className="text-emerald-600 hover:text-emerald-800 p-0.5 cursor-pointer"
+                                title="Save"
+                                id={`save_grade_btn_${g.replace(/\s+/g, '_')}`}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setEditingGrade(null)}
+                                className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                                title="Cancel"
+                                id={`cancel_grade_btn_${g.replace(/\s+/g, '_')}`}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
+                              <span>{g}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingGrade(g);
+                                  setEditGradeVal(g);
+                                }}
+                                className="text-slate-400 hover:text-indigo-600 cursor-pointer"
+                                title="Edit inline"
+                                id={`btn_edit_grade_${g.replace(/\s+/g, '_')}`}
+                              >
+                                <Edit2 className="h-2.5 w-2.5" />
+                              </button>
+                              <button 
+                                onClick={() => handleRemoveGrade(g)}
+                                className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                                id={`btn_delete_grade_${g.replace(/\s+/g, '_')}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          )}
+                        </div>
                       ))}
                     </div>
 
@@ -1476,19 +1640,65 @@ export default function AdminDashboard({
                   {/* Sections setup */}
                   <div className="border-t border-slate-100 pt-5">
                     <h3 className="text-md font-bold text-slate-800 mb-1">Managed Sections</h3>
-                    <p className="text-xs text-slate-400 mb-3">Sections / Class streams</p>
+                    <p className="text-xs text-slate-400 mb-3">Sections / Class streams (Click pencil to edit inline)</p>
                     
-                    <div className="flex flex-wrap gap-1.5 max-h-[130px] overflow-y-auto pr-1">
+                    <div className="flex flex-wrap gap-2 max-h-[130px] overflow-y-auto pr-1">
                       {settings.sections.map((sec) => (
-                        <span key={sec} className="inline-flex items-center gap-1 text-[11px] font-bold bg-indigo-100/40 text-indigo-700 border border-indigo-200/40 px-2.5 py-1 rounded-full">
-                          <span>{sec}</span>
-                          <button 
-                            onClick={() => handleRemoveSection(sec)}
-                            className="text-indigo-400 hover:text-rose-600"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        </span>
+                        <div key={sec} className="inline-flex">
+                          {editingSection === sec ? (
+                            <div className="flex items-center gap-1 bg-white border border-indigo-300 p-1 rounded-lg shadow-sm">
+                              <input
+                                type="text"
+                                value={editSectionVal}
+                                onChange={(e) => setEditSectionVal(e.target.value)}
+                                className="px-1.5 py-0.5 text-[11px] font-bold text-slate-700 outline-none w-20 bg-slate-50 border border-slate-200 rounded"
+                                autoFocus
+                                id={`edit_section_input_${sec.replace(/\s+/g, '_')}`}
+                              />
+                              <button
+                                onClick={async () => {
+                                  await handleEditSection(sec, editSectionVal);
+                                  setEditingSection(null);
+                                }}
+                                className="text-emerald-600 hover:text-emerald-800 p-0.5 cursor-pointer"
+                                title="Save"
+                                id={`save_section_btn_${sec.replace(/\s+/g, '_')}`}
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setEditingSection(null)}
+                                className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                                title="Cancel"
+                                id={`cancel_section_btn_${sec.replace(/\s+/g, '_')}`}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold bg-indigo-100/40 text-indigo-700 border border-indigo-200/40 px-2.5 py-1 rounded-full">
+                              <span>{sec}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingSection(sec);
+                                  setEditSectionVal(sec);
+                                }}
+                                className="text-indigo-400 hover:text-indigo-800 cursor-pointer"
+                                title="Edit inline"
+                                id={`btn_edit_section_${sec.replace(/\s+/g, '_')}`}
+                              >
+                                <Edit2 className="h-2.5 w-2.5" />
+                              </button>
+                              <button 
+                                onClick={() => handleRemoveSection(sec)}
+                                className="text-indigo-400 hover:text-rose-600 cursor-pointer"
+                                id={`btn_delete_section_${sec.replace(/\s+/g, '_')}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </span>
+                          )}
+                        </div>
                       ))}
                     </div>
 
@@ -1765,9 +1975,11 @@ EWS-1003,Chaitanya S,Grade 10,Alpha,5`}
                       className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs outline-none focus:border-indigo-500 font-bold"
                       id="candidate_form_position"
                     >
+                      <option value="">-- Select Office --</option>
                       {settings.positions.map((p) => (
                         <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
+                      <option value="CREATE_NEW">➕ Create New Position Type...</option>
                     </select>
                   </div>
 
@@ -1788,29 +2000,85 @@ EWS-1003,Chaitanya S,Grade 10,Alpha,5`}
                   </div>
                 </div>
 
+                {candidateForm.positionId === "CREATE_NEW" && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-100 space-y-1"
+                  >
+                    <label className="text-xs font-extrabold text-indigo-900 block uppercase tracking-wide">
+                      Name of New Electoral Position / Participation Type *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={candidateForm.newPositionName}
+                      onChange={(e) => setCandidateForm({ ...candidateForm, newPositionName: e.target.value })}
+                      className="w-full px-3 py-2 border border-indigo-200 focus:border-indigo-500 bg-white rounded-lg text-xs outline-none font-bold text-indigo-900"
+                      placeholder="E.g., Sports Captain"
+                    />
+                  </motion.div>
+                )}
+
                 {/* Photo and custom symbol upload row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   
-                  {/* Photo upload */}
-                  <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50">
-                    <label className="text-xs font-extrabold text-slate-500 block mb-2">HD Student Photo</label>
-                    <div className="flex items-center gap-3">
-                      <div className="h-12 w-12 bg-white rounded border border-slate-200 p-0.5 flex items-center justify-center shrink-0">
-                        {candidateForm.photoUrl ? (
-                          <img src={candidateForm.photoUrl} alt="Voter upload" className="h-full w-full object-cover rounded" referrerPolicy="no-referrer" />
-                        ) : (
-                          <Users className="h-6 w-6 text-slate-300" />
-                        )}
-                      </div>
-                      <label className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold rounded cursor-pointer transition-all">
-                        <span>Upload File</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleCandidatePhotoUpload}
-                          className="hidden"
+                  {/* Photo upload / Placeholder System */}
+                  <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50 sm:col-span-2">
+                    <label className="text-xs font-extrabold text-slate-500 block mb-2 uppercase tracking-wide">Student Profile Photo / Placeholder Avatar *</label>
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+                      
+                      {/* Current Preview & File Upload */}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <CandidatePhoto 
+                          photoUrl={candidateForm.photoUrl} 
+                          name={candidateForm.name || "Preview"} 
+                          className="w-16 h-16 rounded-xl text-xs font-extrabold"
+                          iconClassName="h-8 w-8"
                         />
-                      </label>
+                        <div className="flex flex-col gap-1.5">
+                          <span className="text-[10px] font-extrabold text-slate-500 uppercase">Custom Image</span>
+                          <label className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold rounded-lg cursor-pointer transition-all inline-block text-center shadow-sm">
+                            <span>Upload Custom Photo</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleCandidatePhotoUpload}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      </div>
+
+                      {/* Divider for desktop */}
+                      <div className="hidden md:block w-px h-12 bg-slate-200 shrink-0 mx-2" />
+
+                      {/* Selector grid of beautiful default template icons */}
+                      <div className="flex-1 space-y-1 w-full">
+                        <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wide block">Or choose a default template avatar</span>
+                        <div className="grid grid-cols-6 sm:grid-cols-12 gap-1.5">
+                          {PLACEHOLDER_AVATARS.map((avatar) => {
+                            const AvatarIcon = avatar.icon;
+                            const isSelected = candidateForm.photoUrl === avatar.id || (!candidateForm.photoUrl && avatar.id === 'avatar:student');
+                            return (
+                              <button
+                                type="button"
+                                key={avatar.id}
+                                onClick={() => setCandidateForm(prev => ({ ...prev, photoUrl: avatar.id }))}
+                                className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all cursor-pointer ${
+                                  isSelected 
+                                    ? 'ring-2 ring-indigo-500 border-indigo-500 scale-105' 
+                                    : 'hover:scale-105 hover:bg-slate-150'
+                                } ${avatar.colorClass}`}
+                                title={avatar.name}
+                              >
+                                <AvatarIcon className="h-4 w-4" />
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                     </div>
                   </div>
 

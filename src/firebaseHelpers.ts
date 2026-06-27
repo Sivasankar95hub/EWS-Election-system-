@@ -388,6 +388,9 @@ export async function castBallot(admissionNo: string, selectedCandidateIds: stri
       // 2. READ candidates to verify existence and get current votes
       const candSnaps = [];
       for (const candId of selectedCandidateIds) {
+        if (!candId || candId === "NOT_VOTED" || candId === "ABSTAINED") {
+          continue; // Skip lookups for abstain / blank ballots
+        }
         const candRef = doc(db, CANDIDATES_COLLECTION, candId);
         const snap = await transaction.get(candRef);
         if (!snap.exists()) {
