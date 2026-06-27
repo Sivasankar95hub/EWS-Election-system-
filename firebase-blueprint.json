@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "Voter": {
+      "title": "Voter",
+      "description": "Student authorized to vote in the election.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "The unique ID (admissionNo in uppercase)." },
+        "name": { "type": "string", "description": "The full name of the student." },
+        "admissionNo": { "type": "string", "description": "The admission number of the student." },
+        "grade": { "type": "string", "description": "The grade/class of the student." },
+        "section": { "type": "string", "description": "The section of the grade." },
+        "rollNo": { "type": "string", "description": "The roll number of the student." },
+        "hasVoted": { "type": "boolean", "description": "Whether this voter has cast their ballot." },
+        "votedAt": { "type": "string", "format": "date-time", "description": "Timestamp when the ballot was cast." }
+      },
+      "required": ["id", "name", "admissionNo", "grade", "section", "rollNo", "hasVoted"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "A student candidate contesting the election.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique candidate ID." },
+        "name": { "type": "string", "description": "Full name of the candidate." },
+        "positionId": { "type": "string", "description": "The ID of the position contested." },
+        "symbolName": { "type": "string", "description": "Name of the election symbol." },
+        "symbolUrl": { "type": "string", "description": "Logo/symbol graphic URL or base64." },
+        "photoUrl": { "type": "string", "description": "Candidate photograph URL or base64." },
+        "manifesto": { "type": "string", "description": "Campaign speech/manifesto writeup." },
+        "votesCount": { "type": "number", "description": "Aggregate tally of votes received." }
+      },
+      "required": ["id", "name", "positionId", "symbolName", "symbolUrl", "photoUrl", "votesCount"]
+    },
+    "Position": {
+      "title": "Position",
+      "description": "A position available in the student council.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique position identifier." },
+        "name": { "type": "string", "description": "Position display name." }
+      },
+      "required": ["id", "name"]
+    },
+    "ElectionSettings": {
+      "title": "ElectionSettings",
+      "description": "Configuration parameters for the current election.",
+      "type": "object",
+      "properties": {
+        "schoolName": { "type": "string", "description": "Name of the school." },
+        "electionTitle": { "type": "string", "description": "Display title of the election." },
+        "logoUrl": { "type": "string", "description": "Base64 encoded or absolute URL of the school logo." },
+        "electionStatus": { "type": "string", "enum": ["draft", "active", "completed"], "description": "Current status phase of the election." },
+        "grades": { "type": "array", "description": "List of grades participating in the election." },
+        "sections": { "type": "array", "description": "List of active sections in the school." },
+        "positions": { "type": "array", "description": "List of active student council positions." }
+      },
+      "required": ["schoolName", "electionTitle", "logoUrl", "electionStatus", "grades", "sections", "positions"]
+    },
+    "LiveActivityLog": {
+      "title": "LiveActivityLog",
+      "description": "A live feed log entry representing a cast ballot.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique log identifier." },
+        "voterName": { "type": "string", "description": "Name of the voter." },
+        "admissionNo": { "type": "string", "description": "Admission number of the voter." },
+        "grade": { "type": "string", "description": "Grade of the voter." },
+        "section": { "type": "string", "description": "Section of the voter." },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Timestamp when the vote was cast." }
+      },
+      "required": ["id", "voterName", "admissionNo", "grade", "section", "timestamp"]
+    }
+  },
+  "firestore": {
+    "settings/config": {
+      "schema": "ElectionSettings",
+      "description": "Global election configuration document."
+    },
+    "candidates/{candidateId}": {
+      "schema": "Candidate",
+      "description": "Active contesting candidates collection."
+    },
+    "voters/{voterId}": {
+      "schema": "Voter",
+      "description": "Registered students database."
+    },
+    "activity/{activityId}": {
+      "schema": "LiveActivityLog",
+      "description": "Live voting activity ticker feed logs."
+    }
+  }
+}

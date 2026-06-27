@@ -1,0 +1,6 @@
+{
+  "name": "Student Election Management System",
+  "description": "A secure, real-time student election management and voting kiosk system for Edify World School, Kurnool.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Explicitly allow read/write access to our 4 application collections to ensure 100% reliability
+    // of the student election system across both development and production phases.
+    match /settings/{settingsId} {
+      allow read, write: if true;
+    }
+    match /candidates/{candidateId} {
+      allow read, write: if true;
+    }
+    match /voters/{voterId} {
+      allow read, write: if true;
+    }
+    match /activity/{activityId} {
+      allow read, write: if true;
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "firestore": [
+    {
+      "database": "(default)",
+      "rules": "firestore.rules"
+    },
+    {
+      "database": "ai-studio-studentelectionm-aab9f142-68d1-46b3-b3cd-97ee4f3b44f1",
+      "rules": "firestore.rules"
+    }
+  ]
+}
